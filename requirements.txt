@@ -27,6 +27,10 @@ numpy>=1.24.0
 # OpenAI
 openai>=1.12.0
 
+# BioBERT Embeddings (lightweight alternative to torch/transformers)
+biobert-embedding==0.1.2
+sentence-transformers>=2.2.0
+
 # Utilities
 python-dotenv>=1.0.0
 
