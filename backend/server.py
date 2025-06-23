@@ -104,22 +104,61 @@ if settings.mongo_url:
 else:
     logger.info("MongoDB not configured. Chat history will not be persisted.")
 
-# OpenAI client
-openai_client = OpenAI(api_key=settings.openai_api_key.get_secret_value() if settings.openai_api_key else None)
+# OpenAI client with error handling
+openai_client = None
+
+def get_openai_client():
+    """Lazy load OpenAI client with validation."""
+    global openai_client
+    if openai_client is None:
+        try:
+            api_key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
+            if not api_key:
+                logger.warning("⚠️ OpenAI API key not configured - AI features will be limited")
+                return None
+            
+            openai_client = OpenAI(api_key=api_key)
+            logger.info("✅ OpenAI client initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize OpenAI client: {e}")
+            return None
+    return openai_client
 
 # Sentence transformer for embeddings (lazy loading to avoid startup timeouts)
 embedding_model = None
 
 def get_embedding_model():
-    """Lazy load embedding model to avoid startup delays."""
+    """Lazy load embedding model with retry logic and robust error handling."""
     global embedding_model
     if embedding_model is None:
-        try:
-            embedding_model = SentenceTransformer(settings.embedding_model_name)
-            logger.info(f"Embedding model loaded: {settings.embedding_model_name}")
-        except Exception as e:
-            logger.error(f"Failed to load embedding model: {e}")
-            raise
+        max_retries = 3
+        retry_delay = 5
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Loading embedding model: {settings.embedding_model_name} (attempt {attempt + 1}/{max_retries})")
+                embedding_model = SentenceTransformer(settings.embedding_model_name)
+                logger.info(f"✅ Embedding model loaded successfully: {settings.embedding_model_name}")
+                break
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Attempt {attempt + 1} failed to load embedding model: {e}")
+                
+                if attempt < max_retries - 1:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    import time
+                    time.sleep(retry_delay)
+                else:
+                    logger.error(f"❌ Failed to load embedding model after {max_retries} attempts")
+                    # Use a fallback model or raise with context
+                    try:
+                        logger.info("Attempting fallback to smaller model...")
+                        embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+                        logger.warning("⚠️ Using fallback embedding model: all-MiniLM-L6-v2")
+                    except Exception as fallback_error:
+                        logger.error(f"❌ Fallback model also failed: {fallback_error}")
+                        raise RuntimeError(f"Could not load any embedding model. Original error: {e}, Fallback error: {fallback_error}")
+                        
     return embedding_model
 
 # Create the main app
@@ -130,17 +169,60 @@ api_router = APIRouter(prefix=settings.api_prefix)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize medical API client
-medical_api_client = MedicalAPIClient()
+# Initialize services with error handling
+medical_api_client = None
+csv_analyzer = None
+batch_mapper = None
+results_processor = None
 
-# Initialize CSV processing services
-csv_analyzer = CSVAnalyzer()
-batch_mapper = BatchMapper()
-results_processor = ResultsProcessor()
+def get_medical_api_client():
+    """Lazy load medical API client."""
+    global medical_api_client
+    if medical_api_client is None:
+        try:
+            medical_api_client = MedicalAPIClient()
+            logger.info("✅ Medical API client initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize medical API client: {e}")
+            raise
+    return medical_api_client
 
-# Create uploads directory
-UPLOADS_DIR = Path("uploads")
-UPLOADS_DIR.mkdir(exist_ok=True)
+def get_csv_services():
+    """Lazy load CSV processing services."""
+    global csv_analyzer, batch_mapper, results_processor
+    if csv_analyzer is None:
+        try:
+            csv_analyzer = CSVAnalyzer()
+            batch_mapper = BatchMapper()
+            results_processor = ResultsProcessor()
+            logger.info("✅ CSV processing services initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize CSV services: {e}")
+            raise
+    return csv_analyzer, batch_mapper, results_processor
+
+# Create uploads directory with proper error handling
+def ensure_uploads_directory():
+    """Ensure uploads directory exists with proper permissions."""
+    uploads_dir = Path("backend/uploads")
+    try:
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Test write permissions
+        test_file = uploads_dir / "test_write.tmp"
+        test_file.write_text("test")
+        test_file.unlink()
+        
+        logger.info(f"✅ Uploads directory ready: {uploads_dir.absolute()}")
+        return uploads_dir
+    except PermissionError as e:
+        logger.error(f"❌ Uploads directory permission error: {e}")
+        raise RuntimeError(f"Cannot create uploads directory: {e}")
+    except Exception as e:
+        logger.error(f"❌ Uploads directory setup failed: {e}")
+        raise RuntimeError(f"Uploads directory setup failed: {e}")
+
+UPLOADS_DIR = ensure_uploads_directory()
 
 # Store uploaded files metadata
 uploaded_files = {}
@@ -676,10 +758,16 @@ class SemanticSearchEngine:
 semantic_engine = None
 
 def get_semantic_engine():
-    """Lazy load semantic search engine."""
+    """Lazy load semantic search engine with error handling."""
     global semantic_engine
     if semantic_engine is None:
-        semantic_engine = SemanticSearchEngine(get_embedding_model())
+        try:
+            embedding_model = get_embedding_model()
+            semantic_engine = SemanticSearchEngine(embedding_model)
+            logger.info("✅ Semantic search engine initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize semantic search engine: {e}")
+            raise RuntimeError(f"Semantic search engine initialization failed: {e}")
     return semantic_engine
 
 # =================== CSV EXPORT UTILITIES ===================
@@ -895,54 +983,83 @@ async def root():
 
 @api_router.get("/health")
 async def health_check():
-    """Health check endpoint for Railway deployment"""
+    """Comprehensive health check endpoint for deployment monitoring."""
+    health_status = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "service": "Medical Coding Intelligence Platform",
+        "version": "2.1.0",
+        "checks": {
+            "api": "healthy",
+            "embedding_model": "unknown",
+            "openai": "unknown", 
+            "cache": "unknown",
+            "database": "unknown",
+            "medical_apis": "unknown",
+            "hybrid_search": "unknown"
+        },
+        "degraded_services": [],
+        "uptime_seconds": (datetime.now() - datetime.fromisoformat("2025-06-23T00:00:00")).total_seconds()
+    }
+    
+    # Check embedding model availability
     try:
-        # Basic health checks
-        health_status = {
-            "status": "healthy",
-            "timestamp": datetime.now().isoformat(),
-            "service": "Medical Coding Intelligence Platform",
-            "version": "2.1.0",
-            "checks": {
-                "api": "healthy",
-                "database": "unknown",
-                "cache": "unknown",
-                "openai": "unknown",
-                "medical_apis": "unknown"
-            }
-        }
-        
-        # Check OpenAI connection
-        try:
-            if settings.openai_api_key:
-                health_status["checks"]["openai"] = "healthy"
-            else:
-                health_status["checks"]["openai"] = "not_configured"
-        except Exception:
-            health_status["checks"]["openai"] = "error"
-        
-        # Check cache service
-        try:
-            await cache_service.ping()
-            health_status["checks"]["cache"] = "healthy"
-        except Exception:
-            health_status["checks"]["cache"] = "error"
-        
-        # Determine overall status
-        failed_checks = [k for k, v in health_status["checks"].items() if v == "error"]
-        if failed_checks:
-            health_status["status"] = "degraded"
-            health_status["failed_checks"] = failed_checks
-        
-        return health_status
-        
+        model = get_embedding_model()
+        if model:
+            health_status["checks"]["embedding_model"] = "healthy"
+        else:
+            health_status["checks"]["embedding_model"] = "error"
+            health_status["degraded_services"].append("embedding_model")
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return {
-            "status": "unhealthy",
-            "timestamp": datetime.now().isoformat(),
-            "error": str(e)
-        }
+        health_status["checks"]["embedding_model"] = f"error: {str(e)[:50]}"
+        health_status["degraded_services"].append("embedding_model")
+    
+    # Check OpenAI client
+    try:
+        client = get_openai_client()
+        if client:
+            health_status["checks"]["openai"] = "healthy"
+        else:
+            health_status["checks"]["openai"] = "not_configured"
+    except Exception as e:
+        health_status["checks"]["openai"] = f"error: {str(e)[:50]}"
+        health_status["degraded_services"].append("openai")
+    
+    # Check cache service
+    try:
+        await cache_service.ping()
+        health_status["checks"]["cache"] = "healthy"
+    except Exception as e:
+        health_status["checks"]["cache"] = f"error: {str(e)[:50]}"
+        health_status["degraded_services"].append("cache")
+    
+    # Check hybrid search availability
+    try:
+        if hybrid_search_engine:
+            health_status["checks"]["hybrid_search"] = "healthy"
+        else:
+            health_status["checks"]["hybrid_search"] = "not_initialized"
+    except Exception as e:
+        health_status["checks"]["hybrid_search"] = f"error: {str(e)[:50]}"
+        health_status["degraded_services"].append("hybrid_search")
+    
+    # Check MongoDB connection
+    try:
+        if client:
+            # Try to ping the database
+            await client.admin.command('ping')
+            health_status["checks"]["database"] = "healthy"
+        else:
+            health_status["checks"]["database"] = "not_configured"
+    except Exception as e:
+        health_status["checks"]["database"] = f"error: {str(e)[:50]}"
+        health_status["degraded_services"].append("database")
+    
+    # Determine overall status
+    if health_status["degraded_services"]:
+        health_status["status"] = "degraded"
+    
+    return health_status
 
 @api_router.get("/usage-guide")
 async def get_usage_guide():
@@ -1045,35 +1162,35 @@ async def search_medical_concepts(query: MedicalQuery):
             
             # Search each requested ontology
             if "umls" in query.ontologies:
-                umls_results = await medical_api_client.search_umls(term)
+                umls_results = await get_medical_api_client().search_umls(term)
                 if umls_results:
                     for result in umls_results:
                         result['is_abbreviation_expansion'] = is_expansion
                     all_results.extend(umls_results)
             
             if "rxnorm" in query.ontologies:
-                rxnorm_results = await medical_api_client.search_rxnorm(term)
+                rxnorm_results = await get_medical_api_client().search_rxnorm(term)
                 if rxnorm_results:
                     for result in rxnorm_results:
                         result['is_abbreviation_expansion'] = is_expansion
                     all_results.extend(rxnorm_results)
             
             if "icd10" in query.ontologies:
-                icd10_results = await medical_api_client.search_icd10(term)
+                icd10_results = await get_medical_api_client().search_icd10(term)
                 if icd10_results:
                     for result in icd10_results:
                         result['is_abbreviation_expansion'] = is_expansion
                     all_results.extend(icd10_results)
             
             if "snomed" in query.ontologies:
-                snomed_results = await medical_api_client.search_snomed(term)
+                snomed_results = await get_medical_api_client().search_snomed(term)
                 if snomed_results:
                     for result in snomed_results:
                         result['is_abbreviation_expansion'] = is_expansion
                     all_results.extend(snomed_results)
             
             if "loinc" in query.ontologies:
-                loinc_results = await medical_api_client.search_loinc(term)
+                loinc_results = await get_medical_api_client().search_loinc(term)
                 if loinc_results:
                     for result in loinc_results:
                         result['is_abbreviation_expansion'] = is_expansion
@@ -1578,15 +1695,23 @@ async def chat_with_medical_ai(message: ChatMessage):
         context += "5. Provides clinical context when appropriate\n"
         context += "6. Mentions confidence levels and validation status\n"
         
-        # Get AI response
-        response = openai_client.chat.completions.create(
-            model=settings.primary_model,
-            messages=[
-                {"role": "system", "content": "You are an expert medical informatics AI assistant with access to both authoritative medical APIs and BioBERT semantic search. You help researchers understand the difference between official codes and semantically related concepts."},
-                {"role": "user", "content": context}
-            ],
-            max_tokens=1500
-        )
+        # Get AI response with error handling
+        client = get_openai_client()
+        if not client:
+            raise HTTPException(status_code=503, detail="OpenAI service not available")
+            
+        try:
+            response = client.chat.completions.create(
+                model=settings.primary_model,
+                messages=[
+                    {"role": "system", "content": "You are an expert medical informatics AI assistant with access to both authoritative medical APIs and BioBERT semantic search. You help researchers understand the difference between official codes and semantically related concepts."},
+                    {"role": "user", "content": context}
+                ],
+                max_tokens=1500
+            )
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            raise HTTPException(status_code=503, detail=f"AI service error: {str(e)}")
         
         ai_response = response.choices[0].message.content
         
@@ -1845,7 +1970,7 @@ async def debug_api_status():
     # Test UMLS
     try:
         if settings.umls_api_key:
-            umls_results = await medical_api_client.search_umls("diabetes")
+            umls_results = await get_medical_api_client().search_umls("diabetes")
             status["apis"]["umls"] = {
                 "status": "✅ Connected", 
                 "test_results": len(umls_results),
@@ -1858,7 +1983,7 @@ async def debug_api_status():
     
     # Test RxNorm (public API)
     try:
-        rxnorm_results = await medical_api_client.search_rxnorm("metformin")
+        rxnorm_results = await get_medical_api_client().search_rxnorm("metformin")
         status["apis"]["rxnorm"] = {
             "status": "✅ Connected",
             "test_results": len(rxnorm_results),
@@ -2099,6 +2224,7 @@ async def upload_csv_file(file: UploadFile = File(...)):
             f.write(content)
         
         # Analyze CSV structure
+        csv_analyzer, _, _ = get_csv_services()
         analysis = await csv_analyzer.analyze_csv_structure(str(file_path), file.filename)
         
         # Store file metadata
@@ -2135,6 +2261,7 @@ async def process_csv_mapping(file_id: str, mapping_config: CSVMappingConfig):
         job_id = str(uuid.uuid4())
         
         # Start background processing
+        _, batch_mapper, _ = get_csv_services()
         asyncio.create_task(
             batch_mapper.process_csv_batch(
                 file_path=file_path,
@@ -2157,6 +2284,7 @@ async def process_csv_mapping(file_id: str, mapping_config: CSVMappingConfig):
 async def get_processing_status(job_id: str):
     """Get the status of a CSV processing job"""
     try:
+        _, batch_mapper, _ = get_csv_services()
         status = batch_mapper.get_job_status(job_id)
         
         if status.get('status') == 'not_found':
@@ -2183,6 +2311,7 @@ async def download_processed_csv(job_id: str):
     """Download the processed CSV file with mappings"""
     try:
         # Get job status
+        _, batch_mapper, _ = get_csv_services()
         status = batch_mapper.get_job_status(job_id)
         
         if status.get('status') != 'completed':
@@ -2217,6 +2346,7 @@ async def get_mapping_report(job_id: str):
     """Get comprehensive mapping report for a completed job"""
     try:
         # Get job status
+        _, batch_mapper, _ = get_csv_services()
         status = batch_mapper.get_job_status(job_id)
         
         if status.get('status') != 'completed':
@@ -2267,6 +2397,7 @@ async def cleanup_old_files(max_age_hours: int = 24):
             del uploaded_files[file_id]
         
         # Clean up old jobs
+        _, batch_mapper, _ = get_csv_services()
         batch_mapper.cleanup_old_jobs(max_age_hours)
         
         return {
@@ -2359,25 +2490,38 @@ if static_dir.exists():
     app.mount("/assets", StaticFiles(directory=static_dir), name="assets")
     logger.info(f"Mounted static files from {static_dir}")
 
-# Initialize hybrid search engine on startup
+# Initialize platform on startup with comprehensive validation
 @app.on_event("startup")
 async def startup_event():
+    """Startup event with comprehensive validation and error handling."""
     try:
-        logger.info("Initializing Medical Research Intelligence Platform v2.1")
+        logger.info("🚀 Initializing Medical Research Intelligence Platform v2.1")
         
-        # Initialize cache service
-        await cache_service.initialize()
-        logger.info("Redis cache service initialized successfully")
+        # Import and run startup validation
+        from .utils.startup_validation import startup_validator
+        await startup_validator.validate_all()
+        
+        # Initialize cache service with error handling
+        try:
+            await cache_service.initialize()
+            logger.info("✅ Redis cache service initialized successfully")
+        except Exception as e:
+            logger.warning(f"⚠️ Cache service initialization failed - continuing without cache: {e}")
         
         # Initialize hybrid search engine (async to avoid startup timeout)
         try:
             await hybrid_search_engine.initialize()
-            logger.info("Hybrid search engine initialized successfully")
+            logger.info("✅ Hybrid search engine initialized successfully")
         except Exception as e:
-            logger.warning(f"Hybrid search engine initialization delayed: {e}")
+            logger.warning(f"⚠️ Hybrid search engine initialization delayed: {e}")
             # Continue startup - hybrid search will initialize on first use
+            
+        logger.info("🎉 Medical Research Intelligence Platform startup completed successfully")
+        
     except Exception as e:
-        logger.warning(f"Could not initialize services: {e}")
+        logger.error(f"❌ Critical startup failure: {e}")
+        # Log the error but don't crash - let health checks handle it
+        logger.warning("⚠️ Starting in degraded mode - some features may be limited")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
