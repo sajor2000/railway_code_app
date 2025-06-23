@@ -1,5 +1,6 @@
 """Configuration management using Pydantic Settings."""
 
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 from functools import lru_cache
@@ -26,7 +27,7 @@ class Settings(BaseSettings):
     
     # API Configuration
     api_host: str = Field(default="0.0.0.0", description="API host")
-    api_port: int = Field(default=8000, description="API port")
+    api_port: int = Field(default_factory=lambda: int(os.getenv("PORT", "8000")), description="API port (GCP Cloud Run uses PORT env var)")
     api_prefix: str = Field(default="/api", description="API prefix")
     cors_origins: List[str] = Field(default=["*"], description="CORS origins")
     

@@ -1,3 +1,6 @@
+# GCP Cloud Run Requirements for Medical Coding Intelligence Platform
+# Optimized for Google Cloud deployment with healthcare-grade performance
+
 # Core Dependencies
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
@@ -17,14 +20,9 @@ requests>=2.31.0
 httpx>=0.26.0
 aiohttp>=3.9.0
 
-# ML and Embeddings
-torch>=2.1.0
-transformers>=4.36.0
-sentence-transformers>=2.3.0
-numpy>=1.24.0
-
-# Data Processing
+# Data Processing (lightweight)
 pandas>=2.1.0
+numpy>=1.24.0
 
 # OpenAI
 openai>=1.12.0
@@ -39,3 +37,13 @@ jinja2>=3.1.0
 # Security
 python-jose[cryptography]>=3.3.0
 cryptography>=41.0.0
+
+# Note: For GCP Cloud Run deployment, BioBERT embeddings are handled via:
+# 1. Pinecone vector database (pre-computed medical embeddings)
+# 2. OpenAI embeddings as fallback for new medical terms
+# 3. Full BioBERT available for local development (install torch/transformers separately)
+# 
+# This approach provides:
+# - Fast GCP Cloud Run deployment without heavy ML dependencies
+# - Medical domain accuracy via pre-computed BioBERT vectors in Pinecone
+# - Scalable architecture for production healthcare use
