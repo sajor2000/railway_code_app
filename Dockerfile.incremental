@@ -1,4 +1,4 @@
-# Incremental Deployment - Step 1: Medical APIs only
+# Incremental Dockerfile - Medical APIs without ML models
 FROM python:3.10-slim
 
 # Set environment variables
@@ -10,10 +10,10 @@ ENV PYTHONPATH=/app
 # Create app directory
 WORKDIR /app
 
-# Install minimal system dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Install core dependencies for medical APIs
+# Install core dependencies only
 RUN pip install --no-cache-dir \
     fastapi==0.109.0 \
     uvicorn[standard]==0.27.0 \
@@ -21,22 +21,21 @@ RUN pip install --no-cache-dir \
     pydantic>=2.5.0 \
     pydantic-settings>=2.1.0 \
     httpx>=0.26.0 \
-    requests>=2.31.0 \
-    aiohttp>=3.9.0
+    requests>=2.31.0
 
 # Copy backend source
 COPY backend/ ./backend/
 
-# Create required directories and init files
+# Create required directories and files
 RUN mkdir -p backend/uploads backend/static && \
-    touch backend/__init__.py backend/utils/__init__.py backend/services/__init__.py
+    touch backend/__init__.py
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:$PORT/api/health || exit 1
 
 # Expose port
 EXPOSE $PORT
 
-# Use incremental server for now
+# Start incremental server
 CMD ["uvicorn", "backend.server_incremental:app", "--host", "0.0.0.0", "--port", "8080"]
