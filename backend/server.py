@@ -59,15 +59,9 @@ from .workflows.research_workflow import (
     create_streamlined_medical_workflow
 )
 
-# Import hybrid search components (gracefully handle missing dependencies)
-try:
-    from .integrations.biobert_rag import get_biobert_rag_engine, BioBERTRAGEngine
-    from .integrations.hybrid_search import hybrid_search_engine, HybridSearchResult
-    HYBRID_SEARCH_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"Hybrid search not available: {e}")
-    HYBRID_SEARCH_AVAILABLE = False
-    hybrid_search_engine = None
+# Import hybrid search components
+from .integrations.biobert_rag import get_biobert_rag_engine, BioBERTRAGEngine
+from .integrations.hybrid_search import hybrid_search_engine, HybridSearchResult
 
 ROOT_DIR = Path(__file__).parent.parent  # Go up to project root  
 load_dotenv(ROOT_DIR / '.env')
@@ -113,13 +107,8 @@ else:
 # OpenAI client
 openai_client = OpenAI(api_key=settings.openai_api_key.get_secret_value() if settings.openai_api_key else None)
 
-# Sentence transformer for embeddings (existing) - gracefully handle missing
-try:
-    embedding_model = SentenceTransformer(settings.embedding_model_name)
-    logger.info(f"Embedding model loaded: {settings.embedding_model_name}")
-except Exception as e:
-    logger.warning(f"Could not load embedding model: {e}")
-    embedding_model = None
+# Sentence transformer for embeddings (existing)
+embedding_model = SentenceTransformer(settings.embedding_model_name)
 
 # Create the main app
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -2361,12 +2350,9 @@ async def startup_event():
         await cache_service.initialize()
         logger.info("Redis cache service initialized successfully")
         
-        # Initialize hybrid search engine (if available)
-        if HYBRID_SEARCH_AVAILABLE and hybrid_search_engine:
-            await hybrid_search_engine.initialize()
-            logger.info("Hybrid search engine initialized successfully")
-        else:
-            logger.info("Hybrid search engine not available - running in API-only mode")
+        # Initialize hybrid search engine
+        await hybrid_search_engine.initialize()
+        logger.info("Hybrid search engine initialized successfully")
     except Exception as e:
         logger.warning(f"Could not initialize services: {e}")
 
