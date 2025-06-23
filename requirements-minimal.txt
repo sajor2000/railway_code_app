@@ -38,10 +38,10 @@ jinja2>=3.1.0
 python-jose[cryptography]>=3.3.0
 cryptography>=41.0.0
 
-# Optional ML packages (commented out for Railway deployment)
-# torch>=2.1.0
-# transformers>=4.36.0
-# sentence-transformers>=2.3.0
+# BioBERT Embeddings (lightweight alternative to torch/transformers)
+biobert-embedding==0.1.2
 
-# Note: ML features will gracefully fallback to OpenAI embeddings
-# Add these packages back if you need local BioBERT processing
+# Note: Uses pre-trained DMIS-lab BioBERT optimized for biomedical domain
+# Much lighter than full torch/transformers stack while maintaining BioBERT compatibility
+# Provides 768-dimensional embeddings specifically trained on PubMed articles
+# Perfect for biomedical text classification, clustering, and entity extraction
