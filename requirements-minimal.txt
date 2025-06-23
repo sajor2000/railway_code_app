@@ -1,0 +1,47 @@
+# Minimal Requirements for Railway Deployment
+# Excludes heavy ML packages to reduce build time and memory usage
+
+# Core Dependencies
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# API Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.7
+
+# Database and Vector Store
+pinecone-client==5.0.1
+redis>=5.0.0
+motor>=3.3.0
+
+# Medical Terminology APIs
+requests>=2.31.0
+httpx>=0.26.0
+aiohttp>=3.9.0
+
+# Data Processing (lightweight)
+pandas>=2.1.0
+numpy>=1.24.0
+
+# OpenAI
+openai>=1.12.0
+
+# Utilities
+python-dotenv>=1.0.0
+
+# Export Formats
+pyyaml>=6.0.1
+jinja2>=3.1.0
+
+# Security
+python-jose[cryptography]>=3.3.0
+cryptography>=41.0.0
+
+# Optional ML packages (commented out for Railway deployment)
+# torch>=2.1.0
+# transformers>=4.36.0
+# sentence-transformers>=2.3.0
+
+# Note: ML features will gracefully fallback to OpenAI embeddings
+# Add these packages back if you need local BioBERT processing
