@@ -1,0 +1,32 @@
+# Minimal Dockerfile for GCP Cloud Run deployment testing
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PORT=8080
+
+# Create app directory
+WORKDIR /app
+
+# Install only essential dependencies
+RUN pip install --no-cache-dir \
+    fastapi==0.109.0 \
+    uvicorn[standard]==0.27.0 \
+    python-dotenv==1.0.0
+
+# Copy minimal server
+COPY backend/server_minimal.py ./backend/server_minimal.py
+
+# Create empty __init__.py for module imports
+RUN touch backend/__init__.py
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')"
+
+# Expose port
+EXPOSE 8080
+
+# Start command - direct and simple
+CMD ["uvicorn", "backend.server_minimal:app", "--host", "0.0.0.0", "--port", "8080"]
