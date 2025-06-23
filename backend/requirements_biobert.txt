@@ -1,0 +1,5 @@
+# Additional requirements for original BioBERT embeddings
+biobert-embedding==0.1.2
+
+# Optional but recommended for better performance
+scipy>=1.7.0
