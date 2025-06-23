@@ -10,7 +10,7 @@ echo "🏗️  Building Medical Coding Intelligence Platform..."
 # Step 1: Install frontend dependencies
 echo "📦 Installing frontend dependencies..."
 cd frontend
-npm ci --production
+npm install
 
 # Step 2: Build React app
 echo "⚛️  Building React application..."

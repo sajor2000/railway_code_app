@@ -10,6 +10,7 @@ python-multipart>=0.0.7
 # Database and Vector Store
 pinecone-client==5.0.1
 redis>=5.0.0
+motor>=3.3.0
 
 # Medical Terminology APIs
 requests>=2.31.0

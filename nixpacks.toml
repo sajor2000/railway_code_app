@@ -8,7 +8,7 @@ nixPkgs = ["nodejs", "npm", "python310", "python310Packages.pip"]
 
 [phases.install]
 cmds = [
-    "cd frontend && npm ci --production",
+    "cd frontend && npm install --production",
     "pip install --no-cache-dir -r requirements.txt"
 ]
 
@@ -16,7 +16,9 @@ cmds = [
 cmds = [
     "cd frontend && npm run build",
     "mkdir -p backend/static",
-    "cp -r frontend/build/* backend/static/"
+    "cp -r frontend/build/* backend/static/",
+    "ls -la backend/static/",
+    "echo 'Frontend build copied to backend/static/'"
 ]
 
 [start]

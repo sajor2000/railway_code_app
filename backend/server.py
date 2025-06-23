@@ -89,9 +89,20 @@ else:
 
 print(f"  📂 Working Directory: {Path.cwd()}")
 
-# MongoDB connection
-client = AsyncIOMotorClient(settings.mongo_url)
-db = client[settings.db_name]
+# MongoDB connection (optional - only for chat history persistence)
+client = None
+db = None
+if settings.mongo_url:
+    try:
+        client = AsyncIOMotorClient(settings.mongo_url)
+        db = client[settings.db_name]
+        logger.info("MongoDB connection initialized")
+    except Exception as e:
+        logger.warning(f"MongoDB connection failed: {e}. Chat history will not be persisted.")
+        client = None
+        db = None
+else:
+    logger.info("MongoDB not configured. Chat history will not be persisted.")
 
 # OpenAI client
 openai_client = OpenAI(api_key=settings.openai_api_key.get_secret_value() if settings.openai_api_key else None)
@@ -862,6 +873,57 @@ def create_enhanced_csv_with_attribution(hybrid_results: HybridSearchResponse, o
 @api_router.get("/")
 async def root():
     return {"message": "Medical Research Intelligence Platform v2.1 - Hybrid API + BioBERT RAG Search!"}
+
+@api_router.get("/health")
+async def health_check():
+    """Health check endpoint for Railway deployment"""
+    try:
+        # Basic health checks
+        health_status = {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "service": "Medical Coding Intelligence Platform",
+            "version": "2.1.0",
+            "checks": {
+                "api": "healthy",
+                "database": "unknown",
+                "cache": "unknown",
+                "openai": "unknown",
+                "medical_apis": "unknown"
+            }
+        }
+        
+        # Check OpenAI connection
+        try:
+            if settings.openai_api_key:
+                health_status["checks"]["openai"] = "healthy"
+            else:
+                health_status["checks"]["openai"] = "not_configured"
+        except Exception:
+            health_status["checks"]["openai"] = "error"
+        
+        # Check cache service
+        try:
+            await cache_service.ping()
+            health_status["checks"]["cache"] = "healthy"
+        except Exception:
+            health_status["checks"]["cache"] = "error"
+        
+        # Determine overall status
+        failed_checks = [k for k, v in health_status["checks"].items() if v == "error"]
+        if failed_checks:
+            health_status["status"] = "degraded"
+            health_status["failed_checks"] = failed_checks
+        
+        return health_status
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.now().isoformat(),
+            "error": str(e)
+        }
 
 @api_router.get("/usage-guide")
 async def get_usage_guide():
@@ -2268,51 +2330,15 @@ app.add_middleware(
 # Mount static files for React frontend
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    # Mount the React build static assets (CSS, JS, etc.)
+    react_static_dir = static_dir / "static"
+    if react_static_dir.exists():
+        app.mount("/static", StaticFiles(directory=react_static_dir), name="static")
+        logger.info(f"Mounted React static assets from {react_static_dir}")
+    
+    # Mount remaining static files (images, etc.) at root level
+    app.mount("/assets", StaticFiles(directory=static_dir), name="assets")
     logger.info(f"Mounted static files from {static_dir}")
-
-# Serve React app
-@app.get("/", response_class=HTMLResponse)
-async def serve_frontend():
-    """Serve the React frontend index.html"""
-    static_dir = Path(__file__).parent / "static"
-    index_file = static_dir / "index.html"
-    
-    if index_file.exists():
-        return FileResponse(index_file)
-    else:
-        return HTMLResponse("""
-        <html>
-            <head><title>Medical Coding Intelligence Platform</title></head>
-            <body>
-                <h1>Medical Coding Intelligence Platform</h1>
-                <p>Backend is running. Frontend build not found.</p>
-                <p>API endpoints available at <a href="/docs">/docs</a></p>
-            </body>
-        </html>
-        """)
-
-# Catch-all route to serve React app for client-side routing
-@app.get("/{path:path}")
-async def serve_frontend_routes(path: str):
-    """Serve React app for all non-API routes (client-side routing)"""
-    # Skip API routes
-    if path.startswith("api/") or path.startswith("docs") or path.startswith("openapi.json"):
-        raise HTTPException(status_code=404, detail="Not found")
-    
-    static_dir = Path(__file__).parent / "static"
-    
-    # Try to serve the specific file first
-    requested_file = static_dir / path
-    if requested_file.exists() and requested_file.is_file():
-        return FileResponse(requested_file)
-    
-    # Otherwise serve index.html for React routing
-    index_file = static_dir / "index.html"
-    if index_file.exists():
-        return FileResponse(index_file)
-    else:
-        raise HTTPException(status_code=404, detail="Frontend not found")
 
 # Initialize hybrid search engine on startup
 @app.on_event("startup")
@@ -2332,5 +2358,64 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    client.close()
+    if client:
+        client.close()
     await cache_service.close()
+
+# Frontend serving routes (must be last to avoid conflicts with API routes)
+@app.get("/", response_class=HTMLResponse)
+async def serve_frontend():
+    """Serve the React frontend index.html"""
+    static_dir = Path(__file__).parent / "static"
+    index_file = static_dir / "index.html"
+    
+    if index_file.exists():
+        return FileResponse(index_file)
+    else:
+        return HTMLResponse("""
+        <html>
+            <head><title>Medical Coding Intelligence Platform</title></head>
+            <body>
+                <h1>Medical Coding Intelligence Platform</h1>
+                <p>Backend is running. Frontend build not found.</p>
+                <p>Build the frontend first: <code>cd frontend && npm run build</code></p>
+                <p>API endpoints available at <a href="/docs">/docs</a></p>
+            </body>
+        </html>
+        """)
+
+# Catch-all route to serve React app for client-side routing (MUST BE LAST)
+@app.get("/{path:path}")
+async def serve_frontend_routes(request: Request, path: str):
+    """Serve React app for all non-API routes (client-side routing)"""
+    # Skip API routes and docs
+    if (path.startswith("api/") or 
+        path.startswith("docs") or 
+        path.startswith("openapi.json") or
+        path.startswith("static/") or
+        path.startswith("assets/")):
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    static_dir = Path(__file__).parent / "static"
+    
+    # Try to serve the specific file first (for direct file access)
+    requested_file = static_dir / path
+    if requested_file.exists() and requested_file.is_file():
+        return FileResponse(requested_file)
+    
+    # Otherwise serve index.html for React routing
+    index_file = static_dir / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    else:
+        return HTMLResponse("""
+        <html>
+            <head><title>Medical Coding Intelligence Platform</title></head>
+            <body>
+                <h1>Medical Coding Intelligence Platform</h1>
+                <p>Backend is running. Frontend build not found.</p>
+                <p>Build the frontend first: <code>cd frontend && npm run build</code></p>
+                <p>API endpoints available at <a href="/docs">/docs</a></p>
+            </body>
+        </html>
+        """)

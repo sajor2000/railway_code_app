@@ -30,9 +30,9 @@ class Settings(BaseSettings):
     api_prefix: str = Field(default="/api", description="API prefix")
     cors_origins: List[str] = Field(default=["*"], description="CORS origins")
     
-    # MongoDB Configuration
-    mongo_url: str = Field(..., description="MongoDB connection URL")
-    db_name: str = Field(..., description="MongoDB database name")
+    # MongoDB Configuration (optional - used for chat history if provided)
+    mongo_url: Optional[str] = Field(default="mongodb://localhost:27017", description="MongoDB connection URL")
+    db_name: str = Field(default="medical_coding", description="MongoDB database name")
     
     # Pinecone Configuration
     pinecone_api_key: Optional[SecretStr] = Field(default=None, description="Pinecone API key")
@@ -70,11 +70,11 @@ class Settings(BaseSettings):
     embedding_max_length: int = Field(default=512, description="Max sequence length")
     embedding_batch_size: int = Field(default=32, description="Batch size for embeddings")
     
-    # Redis Configuration
-    redis_host: str = Field(default="redis-14826.c11.us-east-1-3.ec2.redns.redis-cloud.com", description="Redis host")
-    redis_port: int = Field(default=14826, description="Redis port")
+    # Redis Configuration (Railway will provide these via environment variables)
+    redis_host: str = Field(default="localhost", description="Redis host")
+    redis_port: int = Field(default=6379, description="Redis port")
     redis_db: int = Field(default=0, description="Redis database")
-    redis_username: str = Field(default="default", description="Redis username")
+    redis_username: Optional[str] = Field(default=None, description="Redis username")
     redis_password: Optional[SecretStr] = Field(default=None, description="Redis password")
     redis_cache_ttl: int = Field(default=3600, description="Cache TTL in seconds")
     
