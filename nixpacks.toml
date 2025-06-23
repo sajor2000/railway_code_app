@@ -1,12 +1,9 @@
-# Providers - array format required by Nixpacks
-providers = ["node", "python"]
+# Railway Nixpacks Configuration for Medical Coding Platform
+# Simplified configuration to avoid Nix package conflicts
 
 [variables]
-NODE_VERSION = "18.17.0"
+NODE_VERSION = "18"
 PYTHON_VERSION = "3.10"
-
-[phases.setup]
-nixPkgs = ["nodejs", "npm", "python310", "python310Packages.pip"]
 
 [phases.install]
 cmds = [
