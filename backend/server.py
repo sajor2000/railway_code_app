@@ -107,8 +107,20 @@ else:
 # OpenAI client
 openai_client = OpenAI(api_key=settings.openai_api_key.get_secret_value() if settings.openai_api_key else None)
 
-# Sentence transformer for embeddings (existing)
-embedding_model = SentenceTransformer(settings.embedding_model_name)
+# Sentence transformer for embeddings (lazy loading to avoid startup timeouts)
+embedding_model = None
+
+def get_embedding_model():
+    """Lazy load embedding model to avoid startup delays."""
+    global embedding_model
+    if embedding_model is None:
+        try:
+            embedding_model = SentenceTransformer(settings.embedding_model_name)
+            logger.info(f"Embedding model loaded: {settings.embedding_model_name}")
+        except Exception as e:
+            logger.error(f"Failed to load embedding model: {e}")
+            raise
+    return embedding_model
 
 # Create the main app
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -660,8 +672,15 @@ class SemanticSearchEngine:
         
         return sorted(concepts, key=lambda x: x.confidence_score, reverse=True)
 
-# Create semantic search engine instance  
-semantic_engine = SemanticSearchEngine(embedding_model)
+# Create semantic search engine instance (will use lazy-loaded embedding model)
+semantic_engine = None
+
+def get_semantic_engine():
+    """Lazy load semantic search engine."""
+    global semantic_engine
+    if semantic_engine is None:
+        semantic_engine = SemanticSearchEngine(get_embedding_model())
+    return semantic_engine
 
 # =================== CSV EXPORT UTILITIES ===================
 def create_csv_from_concepts(concepts: List[MedicalConcept], original_query: str = "") -> str:
@@ -1079,7 +1098,7 @@ async def search_medical_concepts(query: MedicalQuery):
         
         # Phase 2: Semantic Enhancement
         if query.semantic_search and concepts:
-            concepts = semantic_engine.semantic_similarity(query.query, concepts)
+            concepts = get_semantic_engine().semantic_similarity(query.query, concepts)
         
         # Filter by confidence threshold
         concepts = [c for c in concepts if c.confidence_score >= query.confidence_threshold]
@@ -2350,9 +2369,13 @@ async def startup_event():
         await cache_service.initialize()
         logger.info("Redis cache service initialized successfully")
         
-        # Initialize hybrid search engine
-        await hybrid_search_engine.initialize()
-        logger.info("Hybrid search engine initialized successfully")
+        # Initialize hybrid search engine (async to avoid startup timeout)
+        try:
+            await hybrid_search_engine.initialize()
+            logger.info("Hybrid search engine initialized successfully")
+        except Exception as e:
+            logger.warning(f"Hybrid search engine initialization delayed: {e}")
+            # Continue startup - hybrid search will initialize on first use
     except Exception as e:
         logger.warning(f"Could not initialize services: {e}")
 

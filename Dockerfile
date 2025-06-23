@@ -39,8 +39,11 @@ RUN apt-get update && apt-get install -y \
 # Copy Python requirements
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install Python dependencies with cache
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-download embedding model to avoid startup delays
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" || echo "Model download failed, will download on first use"
 
 # Copy backend source code
 COPY backend/ ./backend/
@@ -56,8 +59,8 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN chown -R appuser:appuser /app
 USER appuser
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+# Health check with longer start period for ML model loading
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:$PORT/api/health || exit 1
 
 # Expose port
