@@ -15,7 +15,16 @@ A comprehensive platform that combines cutting-edge AI with authoritative medica
 
 ## 🚀 Quick Start
 
-### Railway Deployment (Recommended)
+### Google Cloud Run Deployment (Production Ready)
+
+**Current Status**: ✅ Incremental deployment working, 🚀 Production ready with lazy loading
+
+```bash
+# Quick deploy to GCP
+./deploy_production.sh
+```
+
+### Railway Deployment (Alternative)
 
 1. **One-Click Deploy**
    [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/deploy)

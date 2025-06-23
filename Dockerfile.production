@@ -1,0 +1,42 @@
+# Production Dockerfile with all features - using lazy loading
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PORT=8080
+ENV PYTHONPATH=/app
+
+# Create app directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install all Python dependencies including ML libraries
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend source
+COPY backend/ ./backend/
+
+# Create required directories and init files
+RUN mkdir -p backend/uploads backend/static && \
+    touch backend/__init__.py backend/utils/__init__.py backend/services/__init__.py \
+    backend/integrations/__init__.py backend/workflows/__init__.py
+
+# Health check with longer start period for ML model loading
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
+    CMD curl -f http://localhost:$PORT/api/health || exit 1
+
+# Expose port
+EXPOSE $PORT
+
+# Use production server with lazy loading
+CMD ["uvicorn", "backend.server_production:app", "--host", "0.0.0.0", "--port", "8080"]

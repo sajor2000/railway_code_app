@@ -1,0 +1,46 @@
+# Production V2 - Ultra-fast startup
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PORT=8080
+ENV PYTHONPATH=/app
+
+# Create app directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create requirements-minimal.txt for fastest startup
+RUN echo "fastapi==0.109.0\nuvicorn[standard]==0.27.0\npython-dotenv==1.0.0\npydantic>=2.5.0\npydantic-settings>=2.1.0\nhttpx>=0.26.0\nrequests>=2.31.0" > requirements-minimal.txt
+
+# Install minimal requirements first
+RUN pip install --no-cache-dir -r requirements-minimal.txt
+
+# Copy full requirements
+COPY requirements.txt .
+
+# Install remaining packages (will use cache if unchanged)
+RUN pip install --no-cache-dir -r requirements.txt || true
+
+# Copy backend source
+COPY backend/ ./backend/
+
+# Create required directories and init files
+RUN mkdir -p backend/uploads backend/static && \
+    touch backend/__init__.py backend/utils/__init__.py backend/services/__init__.py
+
+# Health check with fast timeout
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:$PORT/api/health || exit 1
+
+# Expose port
+EXPOSE $PORT
+
+# Use production V2 server
+CMD ["uvicorn", "backend.server_production_v2:app", "--host", "0.0.0.0", "--port", "8080"]
