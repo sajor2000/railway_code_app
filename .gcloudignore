@@ -1,0 +1,109 @@
+# GCP Cloud Build Ignore File for Medical Coding Intelligence Platform
+# Excludes unnecessary files from deployment to optimize build time and image size
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+docs/
+RAILWAY_*.md
+
+# Development environment files
+.env
+.env.*
+!.env.example
+
+# Node.js
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+frontend/.next/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+app.log
+
+# Test coverage
+coverage/
+.nyc_output
+.coverage
+htmlcov/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Cache
+.cache/
+.parcel-cache/
+.pytest_cache/
+
+# Temporary files
+*.tmp
+*.temp
+uploads/
+backend/uploads/
+
+# Railway specific files (not needed for GCP)
+railway.toml
+nixpacks.toml
+.railway/
+
+# Local development files
+requirements.txt  # Use requirements-minimal.txt for GCP
+backend/requirements.txt
+backend/requirements_biobert.txt
+
+# Frontend development files
+frontend/README.md
+frontend/src/**/*.test.js
+frontend/src/**/*.spec.js

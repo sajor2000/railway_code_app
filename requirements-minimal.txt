@@ -38,10 +38,12 @@ jinja2>=3.1.0
 python-jose[cryptography]>=3.3.0
 cryptography>=41.0.0
 
-# BioBERT Embeddings (lightweight alternative to torch/transformers)
-biobert-embedding==0.1.2
-
-# Note: Uses pre-trained DMIS-lab BioBERT optimized for biomedical domain
-# Much lighter than full torch/transformers stack while maintaining BioBERT compatibility
-# Provides 768-dimensional embeddings specifically trained on PubMed articles
-# Perfect for biomedical text classification, clustering, and entity extraction
+# Note: For Railway deployment, BioBERT embeddings are handled via:
+# 1. Pinecone vector database (pre-computed medical embeddings)
+# 2. OpenAI embeddings as fallback for new medical terms
+# 3. Full BioBERT available for local development via requirements.txt
+# 
+# This approach provides:
+# - Fast Railway deployment without heavy ML dependencies
+# - Medical domain accuracy via pre-computed BioBERT vectors in Pinecone
+# - Scalable architecture for production use
